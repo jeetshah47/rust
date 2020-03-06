@@ -559,24 +559,8 @@ impl<'tcx> TyCtxt<'tcx> {
         let dep_node = Q::to_dep_node(self, &key);
 
         if !Q::EVAL_ALWAYS {
-            // The diagnostics for this query will be
-            // promoted to the current session during
-            // `try_mark_green()`, so we can ignore them here.
-            let loaded = self.start_query(job.id, None, |tcx| {
-                let marked = tcx.dep_graph.try_mark_green_and_read(tcx, &dep_node);
-                marked.map(|(prev_dep_node_index, dep_node_index)| {
-                    (
-                        tcx.load_from_disk_and_cache_in_memory(
-                            key.clone(),
-                            prev_dep_node_index,
-                            dep_node_index,
-                            &dep_node,
-                            &Q::reify(),
-                        ),
-                        dep_node_index,
-                    )
-                })
-            });
+            let loaded = self.start_incremental_query(key.clone(), &dep_node, job.id, &Q::reify());
+
             if let Some((result, dep_node_index)) = loaded {
                 job.complete(&result, dep_node_index);
                 return result;
@@ -614,6 +598,36 @@ impl<'tcx> TyCtxt<'tcx> {
         }
 
         return (result, dep_node_index);
+    }
+
+    #[inline(always)]
+    fn start_incremental_query<K: Clone, V>(
+        self,
+        key: K,
+        dep_node: &DepNode,
+        job_id: QueryJobId,
+        query: &QueryVtable<'tcx, K, V>,
+    ) -> Option<(V, DepNodeIndex)> {
+        assert!(!query.eval_always);
+
+        // The diagnostics for this query will be
+        // promoted to the current session during
+        // `try_mark_green()`, so we can ignore them here.
+        self.start_query(job_id, None, |tcx| {
+            let marked = tcx.dep_graph.try_mark_green_and_read(tcx, &dep_node);
+            marked.map(|(prev_dep_node_index, dep_node_index)| {
+                (
+                    tcx.load_from_disk_and_cache_in_memory(
+                        key,
+                        prev_dep_node_index,
+                        dep_node_index,
+                        &dep_node,
+                        query,
+                    ),
+                    dep_node_index,
+                )
+            })
+        })
     }
 
     fn load_from_disk_and_cache_in_memory<K: Clone, V>(
