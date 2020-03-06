@@ -549,23 +549,7 @@ impl<'tcx> TyCtxt<'tcx> {
         }
 
         if Q::ANON {
-            let prof_timer = self.prof.query_provider();
-
-            let ((result, dep_node_index), diagnostics) = with_diagnostics(|diagnostics| {
-                self.start_query(job.id, diagnostics, |tcx| {
-                    tcx.dep_graph.with_anon_task(Q::DEP_KIND, || Q::compute(tcx, key))
-                })
-            });
-
-            prof_timer.finish_with_query_invocation_id(dep_node_index.into());
-
-            self.dep_graph.read_index(dep_node_index);
-
-            if unlikely!(!diagnostics.is_empty()) {
-                self.queries
-                    .on_disk_cache
-                    .store_diagnostics_for_anon_node(dep_node_index, diagnostics);
-            }
+            let (result, dep_node_index) = self.try_execute_anon_query(key, job.id, &Q::reify());
 
             job.complete(&result, dep_node_index);
 
@@ -602,6 +586,34 @@ impl<'tcx> TyCtxt<'tcx> {
         let (result, dep_node_index) = self.force_query_with_job(key, job, dep_node, &Q::reify());
         self.dep_graph.read_index(dep_node_index);
         result
+    }
+
+    #[inline(always)]
+    fn try_execute_anon_query<K, V>(
+        self,
+        key: K,
+        job_id: QueryJobId,
+        query: &QueryVtable<'tcx, K, V>,
+    ) -> (V, DepNodeIndex) {
+        assert!(query.anon);
+
+        let prof_timer = self.prof.query_provider();
+
+        let ((result, dep_node_index), diagnostics) = with_diagnostics(|diagnostics| {
+            self.start_query(job_id, diagnostics, |tcx| {
+                tcx.dep_graph.with_anon_task(query.dep_kind, || query.compute(tcx, key))
+            })
+        });
+
+        prof_timer.finish_with_query_invocation_id(dep_node_index.into());
+
+        self.dep_graph.read_index(dep_node_index);
+
+        if unlikely!(!diagnostics.is_empty()) {
+            self.queries.on_disk_cache.store_diagnostics_for_anon_node(dep_node_index, diagnostics);
+        }
+
+        return (result, dep_node_index);
     }
 
     fn load_from_disk_and_cache_in_memory<K: Clone, V>(

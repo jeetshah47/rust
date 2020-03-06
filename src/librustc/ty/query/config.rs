@@ -27,6 +27,8 @@ pub trait QueryConfig<'tcx> {
 }
 
 pub(crate) struct QueryVtable<'tcx, K, V> {
+    pub anon: bool,
+    pub dep_kind: DepKind,
     pub eval_always: bool,
 
     // Don't use this method to compute query results, instead use the methods on TyCtxt
@@ -98,6 +100,8 @@ pub(crate) trait QueryDescription<'tcx>: QueryAccessors<'tcx> {
 
     fn reify() -> QueryVtable<'tcx, Self::Key, Self::Value> {
         QueryVtable {
+            anon: Self::ANON,
+            dep_kind: Self::DEP_KIND,
             eval_always: Self::EVAL_ALWAYS,
             compute: Self::compute,
             hash_result: Self::hash_result,
