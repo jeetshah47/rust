@@ -582,11 +582,12 @@ impl<'tcx> TyCtxt<'tcx> {
                 let marked = tcx.dep_graph.try_mark_green_and_read(tcx, &dep_node);
                 marked.map(|(prev_dep_node_index, dep_node_index)| {
                     (
-                        tcx.load_from_disk_and_cache_in_memory::<Q>(
+                        tcx.load_from_disk_and_cache_in_memory(
                             key.clone(),
                             prev_dep_node_index,
                             dep_node_index,
                             &dep_node,
+                            &Q::reify(),
                         ),
                         dep_node_index,
                     )
@@ -603,24 +604,25 @@ impl<'tcx> TyCtxt<'tcx> {
         result
     }
 
-    fn load_from_disk_and_cache_in_memory<Q: QueryDescription<'tcx>>(
+    fn load_from_disk_and_cache_in_memory<K: Clone, V>(
         self,
-        key: Q::Key,
+        key: K,
         prev_dep_node_index: SerializedDepNodeIndex,
         dep_node_index: DepNodeIndex,
         dep_node: &DepNode,
-    ) -> Q::Value {
+        query: &QueryVtable<'tcx, K, V>,
+    ) -> V {
         // Note this function can be called concurrently from the same query
         // We must ensure that this is handled correctly.
 
         debug_assert!(self.dep_graph.is_green(dep_node));
 
         // First we try to load the result from the on-disk cache.
-        let result = if Q::cache_on_disk(self, key.clone(), None)
+        let result = if query.cache_on_disk(self, key.clone(), None)
             && self.sess.opts.debugging_opts.incremental_queries
         {
             let prof_timer = self.prof.incr_cache_loading();
-            let result = Q::try_load_from_disk(self, prev_dep_node_index);
+            let result = query.try_load_from_disk(self, prev_dep_node_index);
             prof_timer.finish_with_query_invocation_id(dep_node_index.into());
 
             // We always expect to find a cached result for things that
@@ -644,7 +646,7 @@ impl<'tcx> TyCtxt<'tcx> {
             let prof_timer = self.prof.query_provider();
 
             // The dep-graph for this computation is already in-place.
-            let result = self.dep_graph.with_ignore(|| Q::compute(self, key));
+            let result = self.dep_graph.with_ignore(|| query.compute(self, key));
 
             prof_timer.finish_with_query_invocation_id(dep_node_index.into());
 
@@ -654,7 +656,7 @@ impl<'tcx> TyCtxt<'tcx> {
         // If `-Zincremental-verify-ich` is specified, re-hash results from
         // the cache and make sure that they have the expected fingerprint.
         if unlikely!(self.sess.opts.debugging_opts.incremental_verify_ich) {
-            self.incremental_verify_ich::<Q>(&result, dep_node, dep_node_index);
+            self.incremental_verify_ich(&result, dep_node, dep_node_index, query);
         }
 
         result
@@ -662,11 +664,12 @@ impl<'tcx> TyCtxt<'tcx> {
 
     #[inline(never)]
     #[cold]
-    fn incremental_verify_ich<Q: QueryDescription<'tcx>>(
+    fn incremental_verify_ich<K, V>(
         self,
-        result: &Q::Value,
+        result: &V,
         dep_node: &DepNode,
         dep_node_index: DepNodeIndex,
+        query: &QueryVtable<'tcx, K, V>,
     ) {
         use crate::ich::Fingerprint;
 
@@ -680,7 +683,7 @@ impl<'tcx> TyCtxt<'tcx> {
         debug!("BEGIN verify_ich({:?})", dep_node);
         let mut hcx = self.create_stable_hashing_context();
 
-        let new_hash = Q::hash_result(&mut hcx, result).unwrap_or(Fingerprint::ZERO);
+        let new_hash = query.hash_result(&mut hcx, result).unwrap_or(Fingerprint::ZERO);
         debug!("END verify_ich({:?})", dep_node);
 
         let old_hash = self.dep_graph.fingerprint_of(dep_node_index);

@@ -33,6 +33,34 @@ pub(crate) struct QueryVtable<'tcx, K, V> {
     pub compute: fn(TyCtxt<'tcx>, K) -> V,
 
     pub hash_result: fn(&mut StableHashingContext<'_>, &V) -> Option<Fingerprint>,
+    pub cache_on_disk: fn(TyCtxt<'tcx>, K, Option<&V>) -> bool,
+    pub try_load_from_disk: fn(TyCtxt<'tcx>, SerializedDepNodeIndex) -> Option<V>,
+}
+
+impl<'tcx, K, V> QueryVtable<'tcx, K, V> {
+    pub(crate) fn compute(&self, tcx: TyCtxt<'tcx>, key: K) -> V {
+        (self.compute)(tcx, key)
+    }
+
+    pub(crate) fn hash_result(
+        &self,
+        hcx: &mut StableHashingContext<'_>,
+        value: &V,
+    ) -> Option<Fingerprint> {
+        (self.hash_result)(hcx, value)
+    }
+
+    pub(crate) fn cache_on_disk(&self, tcx: TyCtxt<'tcx>, key: K, value: Option<&V>) -> bool {
+        (self.cache_on_disk)(tcx, key, value)
+    }
+
+    pub(crate) fn try_load_from_disk(
+        &self,
+        tcx: TyCtxt<'tcx>,
+        index: SerializedDepNodeIndex,
+    ) -> Option<V> {
+        (self.try_load_from_disk)(tcx, index)
+    }
 }
 
 pub(crate) trait QueryAccessors<'tcx>: QueryConfig<'tcx> {
@@ -54,14 +82,6 @@ pub(crate) trait QueryAccessors<'tcx>: QueryConfig<'tcx> {
     -> Option<Fingerprint>;
 
     fn handle_cycle_error(tcx: TyCtxt<'tcx>, error: CycleError<'tcx>) -> Self::Value;
-
-    fn reify() -> QueryVtable<'tcx, Self::Key, Self::Value> {
-        QueryVtable {
-            eval_always: Self::EVAL_ALWAYS,
-            compute: Self::compute,
-            hash_result: Self::hash_result,
-        }
-    }
 }
 
 pub(crate) trait QueryDescription<'tcx>: QueryAccessors<'tcx> {
@@ -74,6 +94,16 @@ pub(crate) trait QueryDescription<'tcx>: QueryAccessors<'tcx> {
 
     fn try_load_from_disk(_: TyCtxt<'tcx>, _: SerializedDepNodeIndex) -> Option<Self::Value> {
         bug!("QueryDescription::load_from_disk() called for an unsupported query.")
+    }
+
+    fn reify() -> QueryVtable<'tcx, Self::Key, Self::Value> {
+        QueryVtable {
+            eval_always: Self::EVAL_ALWAYS,
+            compute: Self::compute,
+            hash_result: Self::hash_result,
+            cache_on_disk: Self::cache_on_disk,
+            try_load_from_disk: Self::try_load_from_disk,
+        }
     }
 }
 
