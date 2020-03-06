@@ -26,6 +26,15 @@ pub trait QueryConfig<'tcx> {
     type Value: Clone;
 }
 
+pub(crate) struct QueryVtable<'tcx, K, V> {
+    pub eval_always: bool,
+
+    // Don't use this method to compute query results, instead use the methods on TyCtxt
+    pub compute: fn(TyCtxt<'tcx>, K) -> V,
+
+    pub hash_result: fn(&mut StableHashingContext<'_>, &V) -> Option<Fingerprint>,
+}
+
 pub(crate) trait QueryAccessors<'tcx>: QueryConfig<'tcx> {
     const ANON: bool;
     const EVAL_ALWAYS: bool;
@@ -45,6 +54,14 @@ pub(crate) trait QueryAccessors<'tcx>: QueryConfig<'tcx> {
     -> Option<Fingerprint>;
 
     fn handle_cycle_error(tcx: TyCtxt<'tcx>, error: CycleError<'tcx>) -> Self::Value;
+
+    fn reify() -> QueryVtable<'tcx, Self::Key, Self::Value> {
+        QueryVtable {
+            eval_always: Self::EVAL_ALWAYS,
+            compute: Self::compute,
+            hash_result: Self::hash_result,
+        }
+    }
 }
 
 pub(crate) trait QueryDescription<'tcx>: QueryAccessors<'tcx> {

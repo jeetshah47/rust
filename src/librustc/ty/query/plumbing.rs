@@ -4,7 +4,7 @@
 
 use crate::dep_graph::{DepKind, DepNode, DepNodeIndex, SerializedDepNodeIndex};
 use crate::ty::query::caches::QueryCache;
-use crate::ty::query::config::QueryDescription;
+use crate::ty::query::config::{QueryDescription, QueryVtable};
 use crate::ty::query::job::{QueryInfo, QueryJob, QueryJobId, QueryJobInfo, QueryShardJobId};
 use crate::ty::query::Query;
 use crate::ty::tls;
@@ -160,7 +160,7 @@ where
     id: QueryJobId,
 }
 
-impl<'tcx, C: QueryCache> JobOwner<'tcx, C>
+impl<'tcx, C> JobOwner<'tcx, C>
 where
     C: QueryCache,
     C::Key: Eq + Hash + Clone + Debug,
@@ -545,7 +545,7 @@ impl<'tcx> TyCtxt<'tcx> {
         // expensive for some `DepKind`s.
         if !self.dep_graph.is_fully_enabled() {
             let null_dep_node = DepNode::new_no_params(crate::dep_graph::DepKind::Null);
-            return self.force_query_with_job::<Q>(key, job, null_dep_node).0;
+            return self.force_query_with_job(key, job, null_dep_node, &Q::reify()).0;
         }
 
         if Q::ANON {
@@ -598,7 +598,7 @@ impl<'tcx> TyCtxt<'tcx> {
             }
         }
 
-        let (result, dep_node_index) = self.force_query_with_job::<Q>(key, job, dep_node);
+        let (result, dep_node_index) = self.force_query_with_job(key, job, dep_node, &Q::reify());
         self.dep_graph.read_index(dep_node_index);
         result
     }
@@ -689,12 +689,18 @@ impl<'tcx> TyCtxt<'tcx> {
     }
 
     #[inline(always)]
-    fn force_query_with_job<Q: QueryDescription<'tcx>>(
+    fn force_query_with_job<C>(
         self,
-        key: Q::Key,
-        job: JobOwner<'tcx, Q::Cache>,
+        key: C::Key,
+        job: JobOwner<'tcx, C>,
         dep_node: DepNode,
-    ) -> (Q::Value, DepNodeIndex) {
+        query: &QueryVtable<'tcx, C::Key, C::Value>,
+    ) -> (C::Value, DepNodeIndex)
+    where
+        C: QueryCache,
+        C::Key: Eq + Hash + Clone + Debug,
+        C::Value: Clone,
+    {
         // If the following assertion triggers, it can have two reasons:
         // 1. Something is wrong with DepNode creation, either here or
         //    in `DepGraph::try_mark_green()`.
@@ -713,16 +719,16 @@ impl<'tcx> TyCtxt<'tcx> {
 
         let ((result, dep_node_index), diagnostics) = with_diagnostics(|diagnostics| {
             self.start_query(job.id, diagnostics, |tcx| {
-                if Q::EVAL_ALWAYS {
+                if query.eval_always {
                     tcx.dep_graph.with_eval_always_task(
                         dep_node,
                         tcx,
                         key,
-                        Q::compute,
-                        Q::hash_result,
+                        query.compute,
+                        query.hash_result,
                     )
                 } else {
-                    tcx.dep_graph.with_task(dep_node, tcx, key, Q::compute, Q::hash_result)
+                    tcx.dep_graph.with_task(dep_node, tcx, key, query.compute, query.hash_result)
                 }
             })
         });
@@ -797,7 +803,7 @@ impl<'tcx> TyCtxt<'tcx> {
                     #[cfg(parallel_compiler)]
                     TryGetJob::JobCompleted(_) => return,
                 };
-                self.force_query_with_job::<Q>(key, job, dep_node);
+                self.force_query_with_job(key, job, dep_node, &Q::reify());
             },
         );
     }
