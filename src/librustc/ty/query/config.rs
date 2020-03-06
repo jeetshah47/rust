@@ -79,7 +79,7 @@ pub(crate) trait QueryAccessors<'tcx>: QueryConfig<'tcx> {
     fn to_dep_node(tcx: TyCtxt<'tcx>, key: &Self::Key) -> DepNode;
 
     // Don't use this method to compute query results, instead use the methods on TyCtxt
-    fn compute(tcx: TyCtxt<'tcx>, key: Self::Key) -> Self::Value;
+    const COMPUTE_FN: fn(TyCtxt<'tcx>, Self::Key) -> Self::Value;
 
     fn hash_result(hcx: &mut StableHashingContext<'_>, result: &Self::Value)
     -> Option<Fingerprint>;
@@ -105,7 +105,7 @@ pub(crate) trait QueryDescription<'tcx>: QueryAccessors<'tcx> {
             dep_kind: Self::DEP_KIND,
             eval_always: Self::EVAL_ALWAYS,
             name: Self::NAME,
-            compute: Self::compute,
+            compute: Self::COMPUTE_FN,
             hash_result: Self::hash_result,
             cache_on_disk: Self::cache_on_disk,
             try_load_from_disk: Self::try_load_from_disk,

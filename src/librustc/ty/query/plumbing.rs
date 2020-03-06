@@ -1037,10 +1037,7 @@ macro_rules! define_queries_inner {
                 DepConstructor::$node(tcx, *key)
             }
 
-            #[inline]
-            fn compute(tcx: TyCtxt<'tcx>, key: Self::Key) -> Self::Value {
-                __query_compute::$name(tcx, key)
-            }
+            const COMPUTE_FN: fn(TyCtxt<'tcx>, Self::Key) -> Self::Value = __query_compute::$name;
 
             fn hash_result(
                 _hcx: &mut StableHashingContext<'_>,
