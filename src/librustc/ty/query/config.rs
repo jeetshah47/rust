@@ -30,6 +30,7 @@ pub(crate) struct QueryVtable<'tcx, K, V> {
     pub anon: bool,
     pub dep_kind: DepKind,
     pub eval_always: bool,
+    pub name: &'static str,
 
     // Don't use this method to compute query results, instead use the methods on TyCtxt
     pub compute: fn(TyCtxt<'tcx>, K) -> V,
@@ -103,6 +104,7 @@ pub(crate) trait QueryDescription<'tcx>: QueryAccessors<'tcx> {
             anon: Self::ANON,
             dep_kind: Self::DEP_KIND,
             eval_always: Self::EVAL_ALWAYS,
+            name: Self::NAME,
             compute: Self::compute,
             hash_result: Self::hash_result,
             cache_on_disk: Self::cache_on_disk,
