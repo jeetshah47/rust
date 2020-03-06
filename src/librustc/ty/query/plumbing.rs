@@ -191,7 +191,7 @@ where
                         };
 
                         // Create the id of the job we're waiting for
-                        let id = QueryJobId::new(job.id, lookup.shard, Q::dep_kind());
+                        let id = QueryJobId::new(job.id, lookup.shard, Q::DEP_KIND);
 
                         (job.latch(id), _query_blocked_prof_timer)
                     }
@@ -206,7 +206,7 @@ where
                 lock.jobs = id;
                 let id = QueryShardJobId(NonZeroU32::new(id).unwrap());
 
-                let global_id = QueryJobId::new(id, lookup.shard, Q::dep_kind());
+                let global_id = QueryJobId::new(id, lookup.shard, Q::DEP_KIND);
 
                 let job = tls::with_related_context(tcx, |icx| QueryJob::new(id, span, icx.query));
 
@@ -540,7 +540,7 @@ impl<'tcx> TyCtxt<'tcx> {
 
             let ((result, dep_node_index), diagnostics) = with_diagnostics(|diagnostics| {
                 self.start_query(job.id, diagnostics, |tcx| {
-                    tcx.dep_graph.with_anon_task(Q::dep_kind(), || Q::compute(tcx, key))
+                    tcx.dep_graph.with_anon_task(Q::DEP_KIND, || Q::compute(tcx, key))
                 })
             });
 
@@ -916,7 +916,7 @@ macro_rules! define_queries_inner {
                                     job: job.id,
                                     shard:  u16::try_from(shard_id).unwrap(),
                                     kind:
-                                        <queries::$name<'tcx> as QueryAccessors<'tcx>>::dep_kind(),
+                                        <queries::$name<'tcx> as QueryAccessors<'tcx>>::DEP_KIND,
                                 };
                                 let info = QueryInfo {
                                     span: job.span,
@@ -1023,6 +1023,7 @@ macro_rules! define_queries_inner {
         impl<$tcx> QueryAccessors<$tcx> for queries::$name<$tcx> {
             const ANON: bool = is_anon!([$($modifiers)*]);
             const EVAL_ALWAYS: bool = is_eval_always!([$($modifiers)*]);
+            const DEP_KIND: dep_graph::DepKind = dep_graph::DepKind::$node;
 
             type Cache = query_storage!([$($modifiers)*][$K, $V]);
 
@@ -1040,11 +1041,6 @@ macro_rules! define_queries_inner {
             #[inline(always)]
             fn to_dep_node(tcx: TyCtxt<$tcx>, key: &Self::Key) -> DepNode {
                 DepConstructor::$node(tcx, *key)
-            }
-
-            #[inline(always)]
-            fn dep_kind() -> dep_graph::DepKind {
-                dep_graph::DepKind::$node
             }
 
             #[inline]
