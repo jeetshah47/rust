@@ -36,6 +36,7 @@ pub(crate) struct QueryVtable<'tcx, K, V> {
     pub compute: fn(TyCtxt<'tcx>, K) -> V,
 
     pub hash_result: fn(&mut StableHashingContext<'_>, &V) -> Option<Fingerprint>,
+    pub handle_cycle_error: fn(TyCtxt<'tcx>, CycleError<'tcx>) -> V,
     pub cache_on_disk: fn(TyCtxt<'tcx>, K, Option<&V>) -> bool,
     pub try_load_from_disk: fn(TyCtxt<'tcx>, SerializedDepNodeIndex) -> Option<V>,
 }
@@ -51,6 +52,10 @@ impl<'tcx, K, V> QueryVtable<'tcx, K, V> {
         value: &V,
     ) -> Option<Fingerprint> {
         (self.hash_result)(hcx, value)
+    }
+
+    pub(crate) fn handle_cycle_error(&self, tcx: TyCtxt<'tcx>, error: CycleError<'tcx>) -> V {
+        (self.handle_cycle_error)(tcx, error)
     }
 
     pub(crate) fn cache_on_disk(&self, tcx: TyCtxt<'tcx>, key: K, value: Option<&V>) -> bool {
@@ -106,6 +111,7 @@ pub(crate) trait QueryDescription<'tcx>: QueryAccessors<'tcx> {
         name: Self::NAME,
         compute: Self::COMPUTE_FN,
         hash_result: Self::hash_result,
+        handle_cycle_error: Self::handle_cycle_error,
         cache_on_disk: Self::cache_on_disk,
         try_load_from_disk: Self::try_load_from_disk,
     };

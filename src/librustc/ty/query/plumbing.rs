@@ -175,15 +175,14 @@ where
     /// This function is inlined because that results in a noticeable speed-up
     /// for some compile-time benchmarks.
     #[inline(always)]
-    pub(super) fn try_start<Q>(
+    pub(super) fn try_start(
         tcx: TyCtxt<'tcx>,
+        state: &'tcx QueryState<'tcx, C>,
         span: Span,
         key: &C::Key,
         mut lookup: QueryLookup<'tcx, C::Key, C::Sharded>,
-    ) -> TryGetJob<'tcx, C>
-    where
-        Q: QueryDescription<'tcx, Key = C::Key, Value = C::Value, Cache = C>,
-    {
+        query: &QueryVtable<'tcx, C::Key, C::Value>,
+    ) -> TryGetJob<'tcx, C> {
         let lock = &mut *lookup.lock;
 
         let (latch, mut _query_blocked_prof_timer) = match lock.active.entry((*key).clone()) {
@@ -200,7 +199,7 @@ where
                         };
 
                         // Create the id of the job we're waiting for
-                        let id = QueryJobId::new(job.id, lookup.shard, Q::DEP_KIND);
+                        let id = QueryJobId::new(job.id, lookup.shard, query.dep_kind);
 
                         (job.latch(id), _query_blocked_prof_timer)
                     }
@@ -215,14 +214,13 @@ where
                 lock.jobs = id;
                 let id = QueryShardJobId(NonZeroU32::new(id).unwrap());
 
-                let global_id = QueryJobId::new(id, lookup.shard, Q::DEP_KIND);
+                let global_id = QueryJobId::new(id, lookup.shard, query.dep_kind);
 
                 let job = tls::with_related_context(tcx, |icx| QueryJob::new(id, span, icx.query));
 
                 entry.insert(QueryResult::Started(job));
 
-                let owner =
-                    JobOwner { state: Q::query_state(tcx), id: global_id, key: (*key).clone() };
+                let owner = JobOwner { state, id: global_id, key: (*key).clone() };
                 return TryGetJob::NotYetStarted(owner);
             }
         };
@@ -232,7 +230,7 @@ where
         // so we just return the error.
         #[cfg(not(parallel_compiler))]
         return TryGetJob::Cycle(cold_path(|| {
-            Q::handle_cycle_error(tcx, latch.find_cycle_in_stack(tcx, span))
+            query.handle_cycle_error(tcx, latch.find_cycle_in_stack(tcx, span))
         }));
 
         // With parallel queries we might just have to wait on some other
@@ -242,11 +240,11 @@ where
             let result = latch.wait_on(tcx, span);
 
             if let Err(cycle) = result {
-                return TryGetJob::Cycle(Q::handle_cycle_error(tcx, cycle));
+                return TryGetJob::Cycle(query.handle_cycle_error(tcx, cycle));
             }
 
             let cached = tcx.try_get_cached(
-                Q::query_state(self),
+                state,
                 (*key).clone(),
                 |value, index| (value.clone(), index),
                 |_, _| panic!("value must be in cache after waiting"),
@@ -531,15 +529,16 @@ impl<'tcx> TyCtxt<'tcx> {
         key: Q::Key,
         lookup: QueryLookup<'tcx, Q::Key, <Q::Cache as QueryCache>::Sharded>,
     ) -> Q::Value {
-        let job = match JobOwner::try_start::<Q>(self, span, &key, lookup) {
-            TryGetJob::NotYetStarted(job) => job,
-            TryGetJob::Cycle(result) => return result,
-            #[cfg(parallel_compiler)]
-            TryGetJob::JobCompleted((v, index)) => {
-                self.dep_graph.read_index(index);
-                return v;
-            }
-        };
+        let job =
+            match JobOwner::try_start(self, Q::query_state(self), span, &key, lookup, &Q::VTABLE) {
+                TryGetJob::NotYetStarted(job) => job,
+                TryGetJob::Cycle(result) => return result,
+                #[cfg(parallel_compiler)]
+                TryGetJob::JobCompleted((v, index)) => {
+                    self.dep_graph.read_index(index);
+                    return v;
+                }
+            };
 
         // Fast path for when incr. comp. is off. `to_dep_node` is
         // expensive for some `DepKind`s.
@@ -826,7 +825,14 @@ impl<'tcx> TyCtxt<'tcx> {
                 // Cache hit, do nothing
             },
             |key, lookup| {
-                let job = match JobOwner::try_start::<Q>(self, span, &key, lookup) {
+                let job = match JobOwner::try_start(
+                    self,
+                    Q::query_state(self),
+                    span,
+                    &key,
+                    lookup,
+                    &Q::VTABLE,
+                ) {
                     TryGetJob::NotYetStarted(job) => job,
                     TryGetJob::Cycle(_) => return,
                     #[cfg(parallel_compiler)]
