@@ -916,37 +916,6 @@ macro_rules! define_queries_inner {
             input: ($(([$($modifiers)*] [$($attr)*] [$name]))*)
         }
 
-        impl<$tcx> Queries<$tcx> {
-            pub fn new(
-                providers: IndexVec<CrateNum, Providers<$tcx>>,
-                fallback_extern_providers: Providers<$tcx>,
-                on_disk_cache: OnDiskCache<'tcx>,
-            ) -> Self {
-                Queries {
-                    providers,
-                    fallback_extern_providers: Box::new(fallback_extern_providers),
-                    on_disk_cache,
-                    $($name: Default::default()),*
-                }
-            }
-
-            pub fn try_collect_active_jobs(
-                &self
-            ) -> Option<FxHashMap<QueryJobId, QueryJobInfo<'tcx>>> {
-                let mut jobs = FxHashMap::default();
-
-                $(
-                    self.$name.try_collect_active_jobs(
-                        <queries::$name<'tcx> as QueryAccessors<'tcx>>::DEP_KIND,
-                        Query::$name,
-                        &mut jobs,
-                    )?;
-                )*
-
-                Some(jobs)
-            }
-        }
-
         #[allow(nonstandard_style)]
         #[derive(Clone, Debug)]
         pub enum Query<$tcx> {
@@ -1187,6 +1156,37 @@ macro_rules! define_queries_struct {
             fallback_extern_providers: Box<Providers<$tcx>>,
 
             $($(#[$attr])*  $name: QueryState<$tcx, queries::$name<$tcx>>,)*
+        }
+
+        impl<$tcx> Queries<$tcx> {
+            pub fn new(
+                providers: IndexVec<CrateNum, Providers<$tcx>>,
+                fallback_extern_providers: Providers<$tcx>,
+                on_disk_cache: OnDiskCache<'tcx>,
+            ) -> Self {
+                Queries {
+                    providers,
+                    fallback_extern_providers: Box::new(fallback_extern_providers),
+                    on_disk_cache,
+                    $($name: Default::default()),*
+                }
+            }
+
+            pub fn try_collect_active_jobs(
+                &self
+            ) -> Option<FxHashMap<QueryJobId, QueryJobInfo<'tcx>>> {
+                let mut jobs = FxHashMap::default();
+
+                $(
+                    self.$name.try_collect_active_jobs(
+                        <queries::$name<'tcx> as QueryAccessors<'tcx>>::DEP_KIND,
+                        Query::$name,
+                        &mut jobs,
+                    )?;
+                )*
+
+                Some(jobs)
+            }
         }
     };
 }
