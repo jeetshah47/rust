@@ -1,6 +1,5 @@
 use crate::dep_graph::DepNodeIndex;
 use crate::ty::query::plumbing::{QueryLookupImpl, QueryStateImpl, QueryStateShardImpl};
-use crate::ty::TyCtxt;
 
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::sharded::Sharded;
@@ -36,7 +35,6 @@ pub(crate) trait QueryCache<K, V>: Default {
 
     fn complete(
         &self,
-        tcx: TyCtxt<'tcx>,
         lock_sharded_storage: &mut Self::Sharded,
         key: K,
         value: V,
@@ -91,7 +89,6 @@ impl<K: Eq + Hash, V: Clone> QueryCache<K, V> for DefaultCache {
     #[inline]
     fn complete(
         &self,
-        _: TyCtxt<'tcx>,
         lock_sharded_storage: &mut Self::Sharded,
         key: K,
         value: V,
