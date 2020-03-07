@@ -6,6 +6,7 @@ use crate::mir::{self, interpret};
 use crate::session::{CrateDisambiguator, Session};
 use crate::ty::codec::{self as ty_codec, TyDecoder, TyEncoder};
 use crate::ty::context::TyCtxt;
+use crate::ty::query::config::{QueryAccessors, QueryDescription, QueryVtable};
 use crate::ty::{self, Ty};
 use rustc_ast::ast::Ident;
 use rustc_data_structures::fx::FxHashMap;
@@ -205,8 +206,10 @@ impl<'sess> OnDiskCache<'sess> {
                 macro_rules! encode_queries {
                     ($($query:ident,)*) => {
                         $(
-                            encode_query_results::<ty::query::queries::$query<'_>, _>(
+                            encode_query_results(
                                 tcx,
+                                ty::query::queries::$query::query_state(tcx),
+                                &ty::query::queries::$query::VTABLE,
                                 enc,
                                 qri
                             )?;
@@ -1022,26 +1025,27 @@ impl<'a> SpecializedDecoder<IntEncodedWithFixedSize> for opaque::Decoder<'a> {
     }
 }
 
-fn encode_query_results<'a, 'tcx, Q, E>(
+fn encode_query_results<'a, 'tcx, C, E>(
     tcx: TyCtxt<'tcx>,
+    state: &'a super::plumbing::QueryState<'tcx, C>,
+    query: &QueryVtable<'tcx, C::Key, C::Value>,
     encoder: &mut CacheEncoder<'a, 'tcx, E>,
     query_result_index: &mut EncodedQueryResultIndex,
 ) -> Result<(), E::Error>
 where
-    Q: super::config::QueryDescription<'tcx, Value: Encodable>,
+    C: super::caches::QueryCache,
     E: 'a + TyEncoder,
+    C::Key: Clone,
+    C::Value: Encodable,
 {
-    let _timer = tcx
-        .sess
-        .prof
-        .extra_verbose_generic_activity("encode_query_results_for", ::std::any::type_name::<Q>());
+    let _timer =
+        tcx.sess.prof.extra_verbose_generic_activity("encode_query_results_for", query.name);
 
-    let state = Q::query_state(tcx);
     assert!(state.all_inactive());
 
     state.iter_results(|results| {
         for (key, value, dep_node) in results {
-            if Q::cache_on_disk(tcx, key.clone(), Some(&value)) {
+            if query.cache_on_disk(tcx, key.clone(), Some(&value)) {
                 let dep_node = SerializedDepNodeIndex::new(dep_node.index());
 
                 // Record position of the cache entry.
