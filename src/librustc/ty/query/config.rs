@@ -3,7 +3,7 @@ use crate::dep_graph::{DepKind, DepNode};
 use crate::ty::query::caches::QueryCache;
 use crate::ty::query::plumbing::CycleError;
 use crate::ty::query::queries;
-use crate::ty::query::{Query, QueryState};
+use crate::ty::query::QueryState;
 use crate::ty::TyCtxt;
 use rustc_data_structures::profiling::ProfileCategory;
 use rustc_hir::def_id::{CrateNum, DefId};
@@ -32,8 +32,6 @@ pub(crate) trait QueryAccessors<'tcx>: QueryConfig<'tcx> {
     const DEP_KIND: DepKind;
 
     type Cache: QueryCache<Self::Key, Self::Value>;
-
-    fn query(key: Self::Key) -> Query<'tcx>;
 
     // Don't use this method to access query results, instead use the methods on TyCtxt
     fn query_state<'a>(tcx: TyCtxt<'tcx>) -> &'a QueryState<'tcx, Self>;
