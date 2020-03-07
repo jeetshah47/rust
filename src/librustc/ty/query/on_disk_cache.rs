@@ -209,7 +209,7 @@ impl<'sess> OnDiskCache<'sess> {
                             encode_query_results(
                                 tcx,
                                 ty::query::queries::$query::query_state(tcx),
-                                &ty::query::queries::$query::reify(),
+                                &ty::query::queries::$query::VTABLE,
                                 enc,
                                 qri
                             )?;

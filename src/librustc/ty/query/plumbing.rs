@@ -545,11 +545,11 @@ impl<'tcx> TyCtxt<'tcx> {
         // expensive for some `DepKind`s.
         if !self.dep_graph.is_fully_enabled() {
             let null_dep_node = DepNode::new_no_params(crate::dep_graph::DepKind::Null);
-            return self.force_query_with_job(key, job, null_dep_node, &Q::reify()).0;
+            return self.force_query_with_job(key, job, null_dep_node, &Q::VTABLE).0;
         }
 
         if Q::ANON {
-            let (result, dep_node_index) = self.try_execute_anon_query(key, job.id, &Q::reify());
+            let (result, dep_node_index) = self.try_execute_anon_query(key, job.id, &Q::VTABLE);
 
             job.complete(&result, dep_node_index);
 
@@ -559,7 +559,7 @@ impl<'tcx> TyCtxt<'tcx> {
         let dep_node = Q::to_dep_node(self, &key);
 
         if !Q::EVAL_ALWAYS {
-            let loaded = self.start_incremental_query(key.clone(), &dep_node, job.id, &Q::reify());
+            let loaded = self.start_incremental_query(key.clone(), &dep_node, job.id, &Q::VTABLE);
 
             if let Some((result, dep_node_index)) = loaded {
                 job.complete(&result, dep_node_index);
@@ -567,7 +567,7 @@ impl<'tcx> TyCtxt<'tcx> {
             }
         }
 
-        let (result, dep_node_index) = self.force_query_with_job(key, job, dep_node, &Q::reify());
+        let (result, dep_node_index) = self.force_query_with_job(key, job, dep_node, &Q::VTABLE);
         self.dep_graph.read_index(dep_node_index);
         result
     }
@@ -832,7 +832,7 @@ impl<'tcx> TyCtxt<'tcx> {
                     #[cfg(parallel_compiler)]
                     TryGetJob::JobCompleted(_) => return,
                 };
-                self.force_query_with_job(key, job, dep_node, &Q::reify());
+                self.force_query_with_job(key, job, dep_node, &Q::VTABLE);
             },
         );
     }

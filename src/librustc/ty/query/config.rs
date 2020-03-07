@@ -99,18 +99,16 @@ pub(crate) trait QueryDescription<'tcx>: QueryAccessors<'tcx> {
         bug!("QueryDescription::load_from_disk() called for an unsupported query.")
     }
 
-    fn reify() -> QueryVtable<'tcx, Self::Key, Self::Value> {
-        QueryVtable {
-            anon: Self::ANON,
-            dep_kind: Self::DEP_KIND,
-            eval_always: Self::EVAL_ALWAYS,
-            name: Self::NAME,
-            compute: Self::COMPUTE_FN,
-            hash_result: Self::hash_result,
-            cache_on_disk: Self::cache_on_disk,
-            try_load_from_disk: Self::try_load_from_disk,
-        }
-    }
+    const VTABLE: QueryVtable<'tcx, Self::Key, Self::Value> = QueryVtable {
+        anon: Self::ANON,
+        dep_kind: Self::DEP_KIND,
+        eval_always: Self::EVAL_ALWAYS,
+        name: Self::NAME,
+        compute: Self::COMPUTE_FN,
+        hash_result: Self::hash_result,
+        cache_on_disk: Self::cache_on_disk,
+        try_load_from_disk: Self::try_load_from_disk,
+    };
 }
 
 impl<'tcx, M: QueryAccessors<'tcx, Key = DefId>> QueryDescription<'tcx> for M {
